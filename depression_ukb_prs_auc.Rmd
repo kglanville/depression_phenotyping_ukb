@@ -1,0 +1,1158 @@
+---
+title: "Multiple measures of depression to enhance validity of major depressive disorder in the UK Biobank - AUC Analyses using PRS"
+author: "Kylie P. Glanville"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+```{r load_libraries, include=FALSE, message=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(knitr)
+library(kableExtra)
+library(data.table)
+library(VennDiagram)
+library(eulerr)
+library(scales)
+library(gridExtra)
+library(Hmisc)
+library(ggplot2)
+library(tibble)
+library(tidyverse)
+library(grid)
+library(UpSetR)
+library(formattable)
+library(psychometric)
+library(dplyr)
+library(qqman)
+library(magick)
+library(cowplot)
+library(corrplot)
+library(psych)
+library(pROC)
+library(randomForest)
+
+```
+
+</br>
+
+# AUC
+
+</br>
+
+## Controls 232k
+
+</br>
+
+### AUC MHQ
+
+</br>
+
+```{r mhq_232k_prs_auc, echo=FALSE, message=FALSE}
+
+# MHQ case/control
+
+# Read in phenotype
+mhq_232k_cc <- fread("/file_path/one_to_five_and_mhq_232k", data.table=F)
+mhq_232k_cc <- mhq_232k_cc[,c(1,7)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(mhq_232k_cc) <- NULL
+
+# Read in covariates
+covariates <- fread("/file_path/covariates.txt", data.table=F)
+
+# Merge
+mhq_232k <- merge(mhq_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control232k_with23.MHQ_depressed.best <- read.table("/file_path/NEW_232k_with23.MHQ_depressed.best", header = T) 
+
+# Merge
+mhq_232k <- merge(mhq_232k, control232k_with23.MHQ_depressed.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+# Calculate AUC
+mhq_232k_null_model <- 
+  with(mhq_232k, glm(MHQ_depressed ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_mhq_232k_null_model <- with(mhq_232k, roc(MHQ_depressed, mhq_232k_null_model$fitted.values, ci=TRUE))
+#print(roc_mhq_232k_null_model)
+auc_roc_mhq_232k_null_model <- auc(roc_mhq_232k_null_model)
+ci_roc_mhq_232k_null_model <- ci.auc(roc_mhq_232k_null_model)
+
+aucci_roc_mhq_232k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_mhq_232k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_mhq_232k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_mhq_232k_null_model))[3,1], 
+                                        ")")
+
+mhq_232k_full_model <- 
+  with(mhq_232k, glm(MHQ_depressed ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_mhq_232k_full_model <- with(mhq_232k, roc(MHQ_depressed, mhq_232k_full_model$fitted.values, ci=TRUE))
+#print(roc_mhq_232k_full_model)
+auc_roc_mhq_232k_full_model <- auc(roc_mhq_232k_full_model)
+ci_roc_mhq_232k_full_model <- ci.auc(roc_mhq_232k_full_model)
+
+aucci_roc_mhq_232k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_mhq_232k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_mhq_232k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_mhq_232k_full_model))[3,1], 
+                                        ")")
+
+mhq_null_vs_full <- roc.test(roc_mhq_232k_null_model,roc_mhq_232k_full_model)
+#print(mhq_null_vs_full)
+
+```
+
+</br>
+
+```{r plot_mhq_232k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(mhq_232k, roc(MHQ_depressed, mhq_232k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="grey",
+    lwd=3, lty=4))
+plot.roc(mhq_232k$MHQ_depressed, mhq_232k_full_model$fitted.values, add=TRUE, col="grey", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_mhq_232k_null_model, aucci_roc_mhq_232k_full_model), col = c("grey","grey"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Lifetime Depression (MHQ)\n")
+
+```
+
+</br>
+
+```{r summary_mhq_232k_prs_auc, echo=FALSE, message=FALSE}
+
+#summary(mhq_232k_full_model)
+
+```
+
+</br>
+
+### AUC One Measure
+
+</br>
+
+```{r read_merge_auc_one_232k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+one_232k_cc <- fread("/file_path/one_to_five_and_mhq_232k", data.table=F)
+one_232k_cc <- one_232k_cc[,1:2] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(one_232k_cc) <- NULL
+
+# Merge
+one_232k <- merge(one_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control232k_with23.One_Measure.best <- read.table("/file_path/NEW_232k_with23.One_Measure.best", header = T) 
+
+# Merge
+one_232k <- merge(one_232k, control232k_with23.One_Measure.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+one_232k_null_model <- 
+  with(one_232k, glm(One_Measure ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_one_232k_null_model <- with(one_232k, roc(One_Measure, one_232k_null_model$fitted.values, ci=TRUE))
+#print(roc_one_232k_null_model)
+auc_roc_one_232k_null_model <- auc(roc_one_232k_null_model)
+ci_roc_one_232k_null_model <- ci.auc(roc_one_232k_null_model)
+
+aucci_roc_one_232k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_one_232k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_one_232k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_one_232k_null_model))[3,1], 
+                                        ")")
+
+one_232k_full_model <- 
+  with(one_232k, glm(One_Measure ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_one_232k_full_model <- with(one_232k, roc(One_Measure, one_232k_full_model$fitted.values, ci=TRUE))
+#print(roc_one_232k_full_model)
+auc_roc_one_232k_full_model <- auc(roc_one_232k_full_model)
+ci_roc_one_232k_full_model <- ci.auc(roc_one_232k_full_model)
+
+aucci_roc_one_232k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_one_232k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_one_232k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_one_232k_full_model))[3,1], 
+                                        ")")
+
+one_null_vs_full <- roc.test(roc_one_232k_null_model,roc_one_232k_full_model)
+#print(one_null_vs_full)
+
+```
+
+</br>
+
+```{r plot_one_232k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(one_232k, roc(One_Measure, one_232k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="red",
+    lwd=3, lty=4))
+plot.roc(one_232k$One_Measure, one_232k_full_model$fitted.values, add=TRUE, col="red", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_one_232k_null_model, aucci_roc_one_232k_full_model), col = c("red","red"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("One Measure of Depression\n")
+
+```
+
+</br>
+
+```{r summary_one_232k_prs_auc, echo=FALSE, message=FALSE}
+
+#summary(one_232k_full_model)
+
+```
+
+</br>
+
+### AUC Two Measures
+
+</br>
+
+```{r read_merge_auc_two_232k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+two_232k_cc <- fread("/file_path/one_to_five_and_mhq_232k", data.table=F)
+two_232k_cc <- two_232k_cc[,c(1,3)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(two_232k_cc) <- NULL
+
+# Merge
+two_232k <- merge(two_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control232k_with23.Two_Measures.best <- read.table("/file_path/NEW_232k_with23.Two_Measures.best", header = T) 
+
+# Merge
+two_232k <- merge(two_232k, control232k_with23.Two_Measures.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+two_232k_null_model <- 
+  with(two_232k, glm(Two_Measures ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_two_232k_null_model <- with(two_232k, roc(Two_Measures, two_232k_null_model$fitted.values, ci=TRUE))
+#print(roc_two_232k_null_model)
+auc_roc_two_232k_null_model <- auc(roc_two_232k_null_model)
+ci_roc_two_232k_null_model <- ci.auc(roc_two_232k_null_model)
+
+aucci_roc_two_232k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_two_232k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_two_232k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_two_232k_null_model))[3,1], 
+                                        ")")
+
+two_232k_full_model <- 
+  with(two_232k, glm(Two_Measures ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_two_232k_full_model <- with(two_232k, roc(Two_Measures, two_232k_full_model$fitted.values, ci=TRUE))
+#print(roc_two_232k_full_model)
+auc_roc_two_232k_full_model <- auc(roc_two_232k_full_model)
+ci_roc_two_232k_full_model <- ci.auc(roc_two_232k_full_model)
+
+aucci_roc_two_232k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_two_232k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_two_232k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_two_232k_full_model))[3,1], 
+                                        ")")
+
+two_null_vs_full <- roc.test(roc_two_232k_null_model,roc_two_232k_full_model)
+#print(two_null_vs_full)
+
+```
+
+</br>
+
+```{r plot_two_232k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(two_232k, roc(Two_Measures, two_232k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="orange",
+    lwd=3, lty=4))
+plot.roc(two_232k$Two_Measures, two_232k_full_model$fitted.values, add=TRUE, col="orange", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_two_232k_null_model, aucci_roc_two_232k_full_model), col = c("orange","orange"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Two Measures of Depression\n")
+
+```
+
+</br>
+
+```{r summary_two_232k_prs_auc, echo=FALSE, message=FALSE}
+
+#summary(two_232k_full_model)
+
+```
+
+</br>
+
+### AUC Three Measures
+
+</br>
+
+```{r read_merge_auc_three_232k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+three_232k_cc <- fread("/file_path/one_to_five_and_mhq_232k", data.table=F)
+three_232k_cc <- three_232k_cc[,c(1,4)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(three_232k_cc) <- NULL
+
+# Merge
+three_232k <- merge(three_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control232k_with23.Three_Measures.best <- read.table("/file_path/NEW_232k_with23.Three_Measures.best", header = T) 
+
+# Merge
+three_232k <- merge(three_232k, control232k_with23.Three_Measures.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+three_232k_null_model <- 
+  with(three_232k, glm(Three_Measures ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_three_232k_null_model <- with(three_232k, roc(Three_Measures, three_232k_null_model$fitted.values, ci=TRUE))
+#print(roc_three_232k_null_model)
+auc_roc_three_232k_null_model <- auc(roc_three_232k_null_model)
+ci_roc_three_232k_null_model <- ci.auc(roc_three_232k_null_model)
+
+aucci_roc_three_232k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_three_232k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_three_232k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_three_232k_null_model))[3,1], 
+                                        ")")
+
+three_232k_full_model <- 
+  with(three_232k, glm(Three_Measures ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_three_232k_full_model <- with(three_232k, roc(Three_Measures, three_232k_full_model$fitted.values, ci=TRUE))
+#print(roc_three_232k_full_model)
+auc_roc_three_232k_full_model <- auc(roc_three_232k_full_model)
+ci_roc_three_232k_full_model <- ci.auc(roc_three_232k_full_model)
+
+aucci_roc_three_232k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_three_232k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_three_232k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_three_232k_full_model))[3,1], 
+                                        ")")
+
+three_null_vs_full <- roc.test(roc_three_232k_null_model,roc_three_232k_full_model)
+#print(three_null_vs_full)
+
+```
+
+</br>
+
+```{r plot_three_232k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(three_232k, roc(Three_Measures, three_232k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="green",
+    lwd=3, lty=4))
+plot.roc(three_232k$Three_Measures, three_232k_full_model$fitted.values, add=TRUE, col="green", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_three_232k_null_model, aucci_roc_three_232k_full_model), col = c("green","green"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Three Measures of Depression\n")
+
+```
+
+</br>
+
+```{r summary_three_232k_prs_auc, echo=FALSE, message=FALSE}
+
+#summary(three_232k_full_model)
+
+```
+
+</br>
+
+### AUC Four-Five Measures Combined
+
+</br>
+
+```{r read_merge_auc_four_five_232k_prs, echo=FALSE, message=FALSE}
+
+# Read four measures
+four_232k_cc <- fread("/file_path/one_to_five_and_mhq_232k", data.table=F)
+four_232k_cc <- four_232k_cc[,c(1,5)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(four_232k_cc) <- NULL
+
+# Merge
+four_232k <- merge(four_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in five measures
+five_232k_cc <- fread("/file_path/one_to_five_and_mhq_232k", data.table=F)
+five_232k_cc <- five_232k_cc[,c(1,6)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(five_232k_cc) <- NULL
+
+# Merge
+five_232k <- merge(five_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Merge four and five measures
+four_five_232k_cc <- dplyr::full_join(four_232k_cc, five_232k_cc, by="IID")
+four_five_232k_cc$Four_Five_Measures <- ifelse(four_five_232k_cc$Four_Measures==1 | four_five_232k_cc$Five_Measures==1, 1, 0)
+
+four_five_232k_cc <- four_five_232k_cc[,c(1,4)] %>%
+  na.omit()
+rownames(four_five_232k_cc) <- NULL
+
+# Merge
+four_five_232k <- merge(four_five_232k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS - use best PRS for four measures group
+control232k_with23.Four_Measures.best <- read.table("/file_path/NEW_232k_with23.Four_Measures.best", header = T) 
+
+# Merge
+four_five_232k <- merge(four_five_232k, control232k_with23.Four_Measures.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+four_five_232k_null_model <- 
+  with(four_five_232k, glm(Four_Five_Measures ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_four_five_232k_null_model <- with(four_five_232k, roc(Four_Five_Measures, four_five_232k_null_model$fitted.values, ci=TRUE))
+#print(roc_four_five_232k_null_model)
+auc_roc_four_five_232k_null_model <- auc(roc_four_five_232k_null_model)
+ci_roc_four_five_232k_null_model <- ci.auc(roc_four_five_232k_null_model)
+
+aucci_roc_four_five_232k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_four_five_232k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_four_five_232k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_four_five_232k_null_model))[3,1], 
+                                        ")")
+
+four_five_232k_full_model <- 
+  with(four_five_232k, glm(Four_Five_Measures ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_four_five_232k_full_model <- with(four_five_232k, roc(Four_Five_Measures, four_five_232k_full_model$fitted.values, ci=TRUE))
+#print(roc_four_five_232k_full_model)
+auc_roc_four_five_232k_full_model <- auc(roc_four_five_232k_full_model)
+ci_roc_four_five_232k_full_model <- ci.auc(roc_four_five_232k_full_model)
+
+aucci_roc_four_five_232k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_four_five_232k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_four_five_232k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_four_five_232k_full_model))[3,1], 
+                                        ")")
+
+four_five_null_vs_full <- roc.test(roc_four_five_232k_null_model,roc_four_five_232k_full_model)
+#print(four_five_null_vs_full)
+
+```
+
+</br>
+
+```{r plot_four_five_232k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(four_five_232k, roc(Four_Five_Measures, four_five_232k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="blue",
+    lwd=3, lty=4))
+plot.roc(four_five_232k$Four_Five_Measures, four_five_232k_full_model$fitted.values, add=TRUE, col="blue", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_four_five_232k_null_model, aucci_roc_four_five_232k_full_model), col = c("blue","blue"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Four & Five Measures of Depression\n")
+
+```
+
+</br>
+
+```{r summary_four_five_232k_prs_auc, echo=FALSE, message=FALSE}
+
+#summary(four_five_232k_full_model)
+
+```
+
+### Summary Table
+
+</br>
+
+```{r table_all_measures_232k_prs_auc, echo=FALSE, message=FALSE}
+
+table_mhq_full_232k <- gsub("Full Model AUC", "", aucci_roc_mhq_232k_full_model)
+table_one_full_232k <- gsub("Full Model AUC", "", aucci_roc_one_232k_full_model)
+table_two_full_232k <- gsub("Full Model AUC", "", aucci_roc_two_232k_full_model)
+table_three_full_232k <- gsub("Full Model AUC", "", aucci_roc_three_232k_full_model)
+table_four_five_full_232k <- gsub("Full Model AUC", "", aucci_roc_four_five_232k_full_model)
+
+table_mhq_null_232k <- gsub("Null Model AUC", "", aucci_roc_mhq_232k_null_model)
+table_one_null_232k <- gsub("Null Model AUC", "", aucci_roc_one_232k_null_model)
+table_two_null_232k <- gsub("Null Model AUC", "", aucci_roc_two_232k_null_model)
+table_three_null_232k <- gsub("Null Model AUC", "", aucci_roc_three_232k_null_model)
+table_four_five_null_232k <- gsub("Null Model AUC", "", aucci_roc_four_five_232k_null_model)
+
+mhq_table_auc_232k <- data.frame(
+  Phenotype = "Lifetime Depression (MHQ)",
+  Null = table_mhq_null_232k,
+  Full = table_mhq_full_232k,
+  Delta = percent(auc_roc_mhq_232k_full_model)-percent(auc_roc_mhq_232k_null_model),
+  Delong = format(mhq_null_vs_full$p.value, digits = 1)
+)
+
+one_table_auc_232k <- data.frame(
+  Phenotype = "One Measure",
+  Null = table_one_null_232k,
+  Full = table_one_full_232k,
+  Delta = percent(auc_roc_one_232k_full_model)-percent(auc_roc_one_232k_null_model),
+  Delong = format(one_null_vs_full$p.value, digits = 1)
+)
+
+two_table_auc_232k <- data.frame(
+  Phenotype = "Two Measures",
+  Null = table_two_null_232k,
+  Full = table_two_full_232k,
+  Delta = percent(auc_roc_two_232k_full_model)-percent(auc_roc_two_232k_null_model),
+  Delong = format(two_null_vs_full$p.value, digits = 1)
+)
+
+three_table_auc_232k <- data.frame(
+  Phenotype = "Three Measures",
+  Null = table_three_null_232k,
+  Full = table_three_full_232k,
+  Delta = percent(auc_roc_three_232k_full_model)-percent(auc_roc_three_232k_null_model),
+  Delong = format(three_null_vs_full$p.value, digits = 1)
+)
+
+four_five_table_auc_232k <- data.frame(
+  Phenotype = "Four & Five Measures",
+  Null = table_four_five_null_232k,
+  Full = table_four_five_full_232k,
+  Delta = percent(auc_roc_four_five_232k_full_model)-percent(auc_roc_four_five_232k_null_model),
+  Delong = format(four_five_null_vs_full$p.value, digits = 1)
+)
+
+summary_table_auc_232k <- rbind(mhq_table_auc_232k, one_table_auc_232k, two_table_auc_232k, three_table_auc_232k, four_five_table_auc_232k)
+colnames(summary_table_auc_232k) <- c("Depression Phenotype", "Null Model AUC (95% CI)", "Full Model AUC (95% CI)", "AUC Increase with PRS", "Null vs. Full p-value")
+
+kable(summary_table_auc_232k, escape = FALSE, format.args = list(big.mark = ',')) %>%
+  kable_styling(c("striped","condensed")) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#666")
+
+```
+
+</br>
+
+## MHQ controls 58k
+
+</br>
+
+### AUC MHQ
+
+</br>
+
+```{r read_merge_auc_mhq_58k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+mhq_58k_cc <- fread("/file_path/one_to_five_and_mhq_58k", data.table=F)
+mhq_58k_cc <- mhq_58k_cc[,c(1,7)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(mhq_58k_cc) <- NULL
+
+# Read in covariates
+covariates <- fread("/file_path/covariates.txt", data.table=F)
+
+# Merge
+mhq_58k <- merge(mhq_58k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control58k_with23.MHQ_depressed.best <- read.table("/file_path/NEW_58k_with23.MHQ_depressed.best", header = T) 
+
+# Merge
+mhq_58k <- merge(mhq_58k, control58k_with23.MHQ_depressed.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+# Calculate AUC
+mhq_58k_null_model <- 
+  with(mhq_58k, glm(MHQ_depressed ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_mhq_58k_null_model <- with(mhq_58k, roc(MHQ_depressed, mhq_58k_null_model$fitted.values, ci=TRUE))
+#print(roc_mhq_58k_null_model)
+auc_roc_mhq_58k_null_model <- auc(roc_mhq_58k_null_model)
+ci_roc_mhq_58k_null_model <- ci.auc(roc_mhq_58k_null_model)
+
+aucci_roc_mhq_58k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_mhq_58k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_mhq_58k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_mhq_58k_null_model))[3,1], 
+                                        ")")
+
+mhq_58k_full_model <- 
+  with(mhq_58k, glm(MHQ_depressed ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_mhq_58k_full_model <- with(mhq_58k, roc(MHQ_depressed, mhq_58k_full_model$fitted.values, ci=TRUE))
+#print(roc_mhq_58k_full_model)
+auc_roc_mhq_58k_full_model <- auc(roc_mhq_58k_full_model)
+ci_roc_mhq_58k_full_model <- ci.auc(roc_mhq_58k_full_model)
+
+aucci_roc_mhq_58k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_mhq_58k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_mhq_58k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_mhq_58k_full_model))[3,1], 
+                                        ")")
+
+mhq_null_vs_full_58k <- roc.test(roc_mhq_58k_null_model,roc_mhq_58k_full_model)
+#print(mhq_null_vs_full_58k)
+
+```
+
+</br>
+
+```{r plot_mhq_58k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(mhq_58k, roc(MHQ_depressed, mhq_58k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="grey",
+    lwd=3, lty=4))
+plot.roc(mhq_58k$MHQ_depressed, mhq_58k_full_model$fitted.values, add=TRUE, col="grey", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_mhq_58k_null_model, aucci_roc_mhq_58k_full_model), col = c("grey","grey"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Lifetime Depression (MHQ)\n")
+
+```
+
+</br>
+
+### AUC One Measure
+
+</br>
+
+```{r read_merge_auc_one_58k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+one_58k_cc <- fread("/file_path/one_to_five_and_mhq_58k", data.table=F)
+one_58k_cc <- one_58k_cc[,1:2] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(one_58k_cc) <- NULL
+
+# Merge
+one_58k <- merge(one_58k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control58k_with23.One_Measure.best <- read.table("/file_path/NEW_58k_with23.One_Measure.best", header = T) 
+
+# Merge
+one_58k <- merge(one_58k, control58k_with23.One_Measure.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+one_58k_null_model <- 
+  with(one_58k, glm(One_Measure ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_one_58k_null_model <- with(one_58k, roc(One_Measure, one_58k_null_model$fitted.values, ci=TRUE))
+#print(roc_one_58k_null_model)
+auc_roc_one_58k_null_model <- auc(roc_one_58k_null_model)
+ci_roc_one_58k_null_model <- ci.auc(roc_one_58k_null_model)
+
+aucci_roc_one_58k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_one_58k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_one_58k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_one_58k_null_model))[3,1], 
+                                        ")")
+
+one_58k_full_model <- 
+  with(one_58k, glm(One_Measure ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_one_58k_full_model <- with(one_58k, roc(One_Measure, one_58k_full_model$fitted.values, ci=TRUE))
+#print(roc_one_58k_full_model)
+auc_roc_one_58k_full_model <- auc(roc_one_58k_full_model)
+ci_roc_one_58k_full_model <- ci.auc(roc_one_58k_full_model)
+
+aucci_roc_one_58k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_one_58k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_one_58k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_one_58k_full_model))[3,1], 
+                                        ")")
+
+one_null_vs_full_58k <- roc.test(roc_one_58k_null_model,roc_one_58k_full_model)
+#print(one_null_vs_full_58k)
+
+```
+
+</br>
+
+```{r plot_one_58k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(one_58k, roc(One_Measure, one_58k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="red",
+    lwd=3, lty=4))
+plot.roc(one_58k$One_Measure, one_58k_full_model$fitted.values, add=TRUE, col="red", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_one_58k_null_model, aucci_roc_one_58k_full_model), col = c("red","red"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("One Measure of Depression\n")
+
+```
+
+</br>
+
+### AUC Two Measures
+
+</br>
+
+```{r read_merge_auc_two_58k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+two_58k_cc <- fread("/file_path/one_to_five_and_mhq_58k", data.table=F)
+two_58k_cc <- two_58k_cc[,c(1,3)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(two_58k_cc) <- NULL
+
+# Merge
+two_58k <- merge(two_58k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control58k_with23.Two_Measures.best <- read.table("/file_path/NEW_58k_with23.Two_Measures.best", header = T)
+
+# Merge
+two_58k <- merge(two_58k, control58k_with23.Two_Measures.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+two_58k_null_model <- 
+  with(two_58k, glm(Two_Measures ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_two_58k_null_model <- with(two_58k, roc(Two_Measures, two_58k_null_model$fitted.values, ci=TRUE))
+#print(roc_two_58k_null_model)
+auc_roc_two_58k_null_model <- auc(roc_two_58k_null_model)
+ci_roc_two_58k_null_model <- ci.auc(roc_two_58k_null_model)
+
+aucci_roc_two_58k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_two_58k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_two_58k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_two_58k_null_model))[3,1], 
+                                        ")")
+
+two_58k_full_model <- 
+  with(two_58k, glm(Two_Measures ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_two_58k_full_model <- with(two_58k, roc(Two_Measures, two_58k_full_model$fitted.values, ci=TRUE))
+#print(roc_two_58k_full_model)
+auc_roc_two_58k_full_model <- auc(roc_two_58k_full_model)
+ci_roc_two_58k_full_model <- ci.auc(roc_two_58k_full_model)
+
+aucci_roc_two_58k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_two_58k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_two_58k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_two_58k_full_model))[3,1], 
+                                        ")")
+
+two_null_vs_full_58k <- roc.test(roc_two_58k_null_model,roc_two_58k_full_model)
+#print(two_null_vs_full_58k)
+
+```
+
+</br>
+
+```{r plot_two_58k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(two_58k, roc(Two_Measures, two_58k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="orange",
+    lwd=3, lty=4))
+plot.roc(two_58k$Two_Measures, two_58k_full_model$fitted.values, add=TRUE, col="orange", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_two_58k_null_model, aucci_roc_two_58k_full_model), col = c("orange","orange"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Two Measures of Depression\n")
+
+```
+
+</br>
+
+### AUC Three Measures
+
+</br>
+
+```{r read_merge_auc_three_58k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+three_58k_cc <- fread("/file_path/one_to_five_and_mhq_58k", data.table=F)
+three_58k_cc <- three_58k_cc[,c(1,4)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(three_58k_cc) <- NULL
+
+# Merge
+three_58k <- merge(three_58k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS
+control58k_with23.Three_Measures.best <- read.table("/file_path/NEW_58k_with23.Three_Measures.best", header = T) 
+
+# Merge
+three_58k <- merge(three_58k, control58k_with23.Three_Measures.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+three_58k_null_model <- 
+  with(three_58k, glm(Three_Measures ~ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_three_58k_null_model <- with(three_58k, roc(Three_Measures, three_58k_null_model$fitted.values, ci=TRUE))
+#print(roc_three_58k_null_model)
+auc_roc_three_58k_null_model <- auc(roc_three_58k_null_model)
+ci_roc_three_58k_null_model <- ci.auc(roc_three_58k_null_model)
+
+aucci_roc_three_58k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_three_58k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_three_58k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_three_58k_null_model))[3,1], 
+                                        ")")
+
+three_58k_full_model <- 
+  with(three_58k, glm(Three_Measures ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_three_58k_full_model <- with(three_58k, roc(Three_Measures, three_58k_full_model$fitted.values, ci=TRUE))
+#print(roc_three_58k_full_model)
+auc_roc_three_58k_full_model <- auc(roc_three_58k_full_model)
+ci_roc_three_58k_full_model <- ci.auc(roc_three_58k_full_model)
+
+aucci_roc_three_58k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_three_58k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_three_58k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_three_58k_full_model))[3,1], 
+                                        ")")
+
+three_null_vs_full_58k <- roc.test(roc_three_58k_null_model,roc_three_58k_full_model)
+#print(three_null_vs_full_58k)
+
+```
+
+</br>
+
+```{r plot_three_58k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(three_58k, roc(Three_Measures, three_58k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="green",
+    lwd=3, lty=4))
+plot.roc(three_58k$Three_Measures, three_58k_full_model$fitted.values, add=TRUE, col="green", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_three_58k_null_model, aucci_roc_three_58k_full_model), col = c("green","green"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Three Measures of Depression\n")
+
+```
+
+</br>
+
+### AUC Four-Five Measures Combined
+
+</br>
+
+```{r read_merge_auc_four_five_58k_prs, echo=FALSE, message=FALSE}
+
+# Read in phenotype
+all_58k_cc <- fread("/file_path/one_to_five_and_mhq_58k", data.table=F)
+all_58k_cc$Four_Five_Measures <- ifelse(all_58k_cc$Four_Measures==1 | all_58k_cc$Five_Measures==1, 1, 0)
+
+# Merge
+four_five_58k_cc <- all_58k_cc[,c(1,8)] %>%
+  na.omit() %>%
+  rename(IID = ID)
+rownames(four_five_58k_cc) <- NULL
+
+# Merge
+four_five_58k <- merge(four_five_58k_cc, covariates) %>%
+  dplyr::select(-FID, -age, -sex)
+
+# Read in PRS - use best PRS for four measures group
+control58k_with23.Four_Measures.best <- read.table("/file_path/NEW_58k_with23.Four_Measures.best", header = T) 
+
+# Merge
+four_five_58k <- merge(four_five_58k, control58k_with23.Four_Measures.best) %>%
+  dplyr::select(-FID, -In_Regression)
+
+
+# Calculate AUC
+four_five_58k_null_model <- 
+  with(four_five_58k, glm(Four_Five_Measures ~ PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_four_five_58k_null_model <- with(four_five_58k, roc(Four_Five_Measures, four_five_58k_null_model$fitted.values, ci=TRUE))
+#print(roc_four_five_58k_null_model)
+auc_roc_four_five_58k_null_model <- auc(roc_four_five_58k_null_model)
+ci_roc_four_five_58k_null_model <- ci.auc(roc_four_five_58k_null_model)
+
+aucci_roc_four_five_58k_null_model <- paste0("Null Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_four_five_58k_null_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_four_five_58k_null_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_four_five_58k_null_model))[3,1], 
+                                        ")")
+
+four_five_58k_full_model <- 
+  with(four_five_58k, glm(Four_Five_Measures ~ PRS + PC1 + PC2 + PC3 + PC4+ PC5 + PC6 + as.factor(batch) + as.factor(assessment_centre), family=binomial))
+
+roc_four_five_58k_full_model <- with(four_five_58k, roc(Four_Five_Measures, four_five_58k_full_model$fitted.values, ci=TRUE))
+#print(roc_four_five_58k_full_model)
+auc_roc_four_five_58k_full_model <- auc(roc_four_five_58k_full_model)
+ci_roc_four_five_58k_full_model <- ci.auc(roc_four_five_58k_full_model)
+
+aucci_roc_four_five_58k_full_model <- paste0("Full Model ", "AUC ", 
+                                        as.data.frame(percent(auc_roc_four_five_58k_full_model))[1,1], 
+                                        " (", 
+                                        as.data.frame(percent(ci_roc_four_five_58k_full_model))[1,1], 
+                                        "-", 
+                                        as.data.frame(percent(ci_roc_four_five_58k_full_model))[3,1], 
+                                        ")")
+
+four_five_null_vs_full_58k <- roc.test(roc_four_five_58k_null_model,roc_four_five_58k_full_model)
+#print(four_five_null_vs_full_58k)
+
+```
+
+</br>
+
+```{r plot_four_five_58k_prs_auc, echo=FALSE, message=FALSE}
+
+# Plot
+par(pty = "s")
+with(four_five_58k, roc(Four_Five_Measures, four_five_58k_null_model$fitted.values, 
+    plot = TRUE, 
+    legacy.axes=TRUE, 
+    xlab="False Positive Percentage (Specificity)", 
+    ylab="True Positive Percentage (Sensitivity)",
+    col="blue",
+    lwd=3, lty=4))
+plot.roc(four_five_58k$Four_Five_Measures, four_five_58k_full_model$fitted.values, add=TRUE, col="blue", lwd=4, lty=1)
+legend("bottomright", legend=c(aucci_roc_four_five_58k_null_model, aucci_roc_four_five_58k_full_model), col = c("blue","blue"), lwd = c(3,3), lty = c(4,1), cex = 0.7)
+title("Four & Five Measures of Depression\n")
+
+```
+
+</br>
+
+### Summary Table
+
+</br>
+
+```{r table_all_measures_58k_prs_auc, echo=FALSE, message=FALSE}
+
+table_mhq_full_58k <- gsub("Full Model AUC", "", aucci_roc_mhq_58k_full_model)
+table_one_full_58k <- gsub("Full Model AUC", "", aucci_roc_one_58k_full_model)
+table_two_full_58k <- gsub("Full Model AUC", "", aucci_roc_two_58k_full_model)
+table_three_full_58k <- gsub("Full Model AUC", "", aucci_roc_three_58k_full_model)
+table_four_five_full_58k <- gsub("Full Model AUC", "", aucci_roc_four_five_58k_full_model)
+
+table_mhq_null_58k <- gsub("Null Model AUC", "", aucci_roc_mhq_58k_null_model)
+table_one_null_58k <- gsub("Null Model AUC", "", aucci_roc_one_58k_null_model)
+table_two_null_58k <- gsub("Null Model AUC", "", aucci_roc_two_58k_null_model)
+table_three_null_58k <- gsub("Null Model AUC", "", aucci_roc_three_58k_null_model)
+table_four_five_null_58k <- gsub("Null Model AUC", "", aucci_roc_four_five_58k_null_model)
+
+mhq_table_auc_58k <- data.frame(
+  Phenotype = "Lifetime Depression (MHQ)",
+  Null = table_mhq_null_58k,
+  Full = table_mhq_full_58k,
+  Delta = percent(auc_roc_mhq_58k_full_model)-percent(auc_roc_mhq_58k_null_model),
+  Delong = format(mhq_null_vs_full_58k$p.value, digits = 1)
+)
+
+one_table_auc_58k <- data.frame(
+  Phenotype = "One Measure",
+  Null = table_one_null_58k,
+  Full = table_one_full_58k,
+  Delta = percent(auc_roc_one_58k_full_model)-percent(auc_roc_one_58k_null_model),
+  Delong = format(one_null_vs_full_58k$p.value, digits = 1)
+)
+
+two_table_auc_58k <- data.frame(
+  Phenotype = "Two Measures",
+  Null = table_two_null_58k,
+  Full = table_two_full_58k,
+  Delta = percent(auc_roc_two_58k_full_model)-percent(auc_roc_two_58k_null_model),
+  Delong = format(two_null_vs_full_58k$p.value, digits = 1)
+)
+
+three_table_auc_58k <- data.frame(
+  Phenotype = "Three Measures",
+  Null = table_three_null_58k,
+  Full = table_three_full_58k,
+  Delta = percent(auc_roc_three_58k_full_model)-percent(auc_roc_three_58k_null_model),
+  Delong = format(three_null_vs_full_58k$p.value, digits = 1)
+)
+
+four_five_table_auc_58k <- data.frame(
+  Phenotype = "Four & Five Measures",
+  Null = table_four_five_null_58k,
+  Full = table_four_five_full_58k,
+  Delta = percent(auc_roc_four_five_58k_full_model)-percent(auc_roc_four_five_58k_null_model),
+  Delong = format(four_five_null_vs_full_58k$p.value, digits = 1)
+)
+
+summary_table_auc_58k <- rbind(mhq_table_auc_58k, one_table_auc_58k, two_table_auc_58k, three_table_auc_58k, four_five_table_auc_58k)
+colnames(summary_table_auc_58k) <- c("Depression Phenotype", "Null Model AUC (95% CI)", "Full Model AUC (95% CI)", "AUC Increase with PRS", "Null vs. Full p-value")
+
+kable(summary_table_auc_58k, escape = FALSE, format.args = list(big.mark = ',')) %>%
+  kable_styling(c("striped","condensed")) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#666")
+
+```
+
+</br>
+
+## Plot AUC Summary in Bar Chart
+
+</br>
+
+```{r plot_auc_summary_scientific, echo=FALSE, results = 'asis', fig.align='center', fig.height=5, fig.width=15}
+
+summary_table_auc_232k$Controls <- rep("232k", 5)
+summary_table_auc_58k$Controls <- rep("58k", 5)
+summary_auc <- rbind(summary_table_auc_232k, summary_table_auc_58k)
+
+summary_auc$`Depression Phenotype` <- factor(summary_auc$`Depression Phenotype`, levels=c("One Measure","Two Measures","Three Measures","Four & Five Measures","Lifetime Depression (MHQ)"))
+summary_auc$Controls <- factor(summary_auc$Controls, levels=c("232k","58k"))
+
+summary_auc$print.p <- format(summary_auc$`Null vs. Full p-value`, digits = 1)
+summary_auc$print.p <- sub("e", "*x*10^", summary_auc$print.p)
+
+## Plot
+plot_summary_auc <- ggplot(data = summary_auc, aes(x = `Depression Phenotype`, y = `AUC Increase with PRS`, fill = Controls)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.8) +
+  geom_text(aes(label=paste(summary_auc$print.p)), position=position_dodge(width=0.8), 
+                             vjust=-0.6, hjust=0.5, size = 5, parse = T) +
+  ylab(expression(paste("AUC Increase with PRS"))) +
+  xlab("\nDepression Phenotype") +
+  scale_fill_manual(values=c("royalblue1", "royalblue4"), 
+                    labels = c("Controls", "MHQ controls")) +
+  theme(axis.text=element_text(size=14),
+        axis.title=element_text(size=16),
+        panel.grid.minor.x=element_blank(), 
+        panel.grid.major.x=element_blank(), 
+        panel.grid.minor.y=element_blank(), 
+        panel.grid.major.y=element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.line.y = element_line(color="grey"),
+        axis.line.x = element_line(color="grey"),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)) +
+  labs(fill = 'Control Group\n') +
+  annotate("text", x = 1:5, y = Inf,  vjust=4, fontface=4, colour = "grey40",
+           size=5, label = c(paste(format(sum(one_232k$One_Measure==1), big.mark = ",")),
+                             paste(format(sum(two_232k$Two_Measures==1), big.mark = ",")),
+                             paste(format(sum(three_232k$Three_Measures==1), big.mark = ",")),
+                             paste(format(sum(four_five_232k$Four_Five_Measures==1), big.mark = ",")),
+                             paste(format(sum(mhq_232k$MHQ_depressed==1), big.mark = ",")))) + 
+  annotate("text", x = 1:5, y = Inf,  vjust=2, fontface=4, colour = "grey30",
+           size=5, label = rep("Cases", 5)) +
+  ylim(0,0.06) 
+
+plot_summary_auc
+
+```
+
+</br>
